@@ -5,7 +5,9 @@ editor: visual
 author: Brandon Montalvo
 ---
 
-## Measles Cases Analysis
+# Measles Cases Analysis
+
+## Checkpoint 1
 
 **Dataset**: World Health Organisation (WHO) Provisional Monthly Measles and Rubella Data, downloaded on 2025-06-12.
 
@@ -21,7 +23,6 @@ author: Brandon Montalvo
 2.  Are rubella and measles outbreaks correlated? Are there countries where one virus remains high while the other is low?
 
 ![Sketch](./sketch.png)
-
 
 **Two Research Questions with Supplemental Data**
 
@@ -42,6 +43,129 @@ head(cases_month)
 head(cases_year)
 ```
 
+## Checkpoint 2
+
 ```{r}
-str(cases_month)
+library(tidyverse)
+library(knitr)
+```
+
+### How do the lab-confirmed cases of measles in Italy compare across each specific month from 2012 to 2025?
+
+```{r}
+monthly_lab_confirmed_measles <- function(country_in) {
+
+  cases_month |> 
+    filter(country == country_in) |> 
+    group_by(month) |> 
+    summarize(total_lab_confirmed = sum(measles_lab_confirmed))
+
+}
+
+monthly_lab_confirmed_measles("Italy") |> 
+  mutate(month = case_when(month == 1 ~ "January", 
+                           month == 2 ~ "February", 
+                           month == 3 ~ "March", 
+                           month == 4 ~ "April", 
+                           month == 5 ~ "May", 
+                           month == 6 ~ "June", 
+                           month == 7 ~ "July", 
+                           month == 8 ~ "August", 
+                           month == 9 ~ "September", 
+                           month == 10 ~ "October", 
+                           month == 11 ~ "November", 
+                           month == 12 ~ "December")) |> 
+  kable(col.names = c("Month", "Lab-Confirmed Measles Cases"))
+```
+
+### Are measles cases becoming more concentrated in a smaller number of countries over time?
+
+```{r}
+#Total global cases per year
+global_totals <- cases_year %>%
+  group_by(year) %>%
+  summarize(global_cases = sum(measles_total, na.rm = TRUE))
+
+#Top 10 countries per year
+top10 <- cases_year %>%
+  group_by(year) %>%
+  arrange(year, desc(measles_total)) %>%
+  slice_head(n = 10) %>%
+  summarize(top10_cases = sum(measles_total, na.rm = TRUE))
+
+#Concentration
+concentration <- left_join(global_totals, top10, by = "year") %>%
+  mutate(top10_share = top10_cases / global_cases)
+
+#Plot
+ggplot(concentration, aes(x = year, y = top10_share)) +
+  geom_line(linewidth = 1) +
+  geom_point() +
+  labs(
+    title = "Concentration of Measles Cases Over Time",
+    subtitle = "Share of Global Cases from Top 10 Countries",
+    x = "Year",
+    y = "Proportion of Global Cases (Top 10 Countries)"
+  ) +
+  theme_minimal()
+```
+
+### How do measles case outcomes differ across regions and years?
+
+```{r}
+calc_measles_case_quality <- function(df) {
+  df |>
+    mutate(
+      clinical_rate = measles_clinical / measles_total,
+      epi_link_rate = measles_epi_linked / measles_total,
+      lab_confirm_rate = measles_lab_confirmed / measles_total
+    )
+}
+```
+
+```{r}
+
+
+cases_month |>
+  calc_measles_case_quality() |>
+  group_by(region, year) |>
+  summarize(
+    avg_clinical_rate = mean(clinical_rate,  na.rm = TRUE),
+    avg_epi_link_rate = mean(epi_link_rate, na.rm = TRUE),
+    avg_lab_confirm_rate = mean(lab_confirm_rate,  na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+### How do typical seasonal patterns of measles cases compare across regions
+
+```{r}
+
+calc_monthly_avg <- function(region_name, df) {
+  df |>
+    filter(region == region_name) |>
+    group_by(month) |>
+    summarize(
+      avg_measles_total = mean(measles_total, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    mutate(
+      prop_annual_cases = avg_measles_total / sum(avg_measles_total),
+      region = region_name
+    )
+}
+
+```
+
+```{r}
+regions <- cases_month |>
+  distinct(region) |>
+  pull(region)
+
+monthly_regional_avgs <- regions |>
+  map(calc_monthly_avg, df = cases_month) |>
+  list_rbind() |>
+  arrange(region, month)
+
+monthly_regional_avgs
 ```

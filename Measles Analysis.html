@@ -103,8 +103,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<section id="measles-cases-analysis" class="level2">
-<h2 class="anchored" data-anchor-id="measles-cases-analysis">Measles Cases Analysis</h2>
+<section id="measles-cases-analysis" class="level1">
+<h1>Measles Cases Analysis</h1>
+<section id="checkpoint-1" class="level2">
+<h2 class="anchored" data-anchor-id="checkpoint-1">Checkpoint 1</h2>
 <p><strong>Dataset</strong>: World Health Organisation (WHO) Provisional Monthly Measles and Rubella Data, downloaded on 2025-06-12.</p>
 <p><strong>Source</strong>: <a href="https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-06-24/readme.md" class="uri">https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-06-24/readme.md</a></p>
 <p><strong>Description</strong>: Monthly and yearly reported measles cases and incidence across countries . As measles continues to become a threat across the world, this data set may provide insight patterns and how outbreaks evolve overtime. The unit of observation is a country’s reported case count for a given month or year.</p>
@@ -187,46 +189,239 @@ dbl (16): year, total_population, annualized_population_most_recent_year_onl...
 #   rubella_clinical &lt;dbl&gt;, …</code></pre>
 </div>
 </div>
+</section>
+<section id="checkpoint-2" class="level2">
+<h2 class="anchored" data-anchor-id="checkpoint-2">Checkpoint 2</h2>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">str</span>(cases_month)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.2.0     ✔ readr     2.2.0
+✔ forcats   1.0.1     ✔ stringr   1.6.0
+✔ ggplot2   4.0.2     ✔ tibble    3.3.1
+✔ lubridate 1.9.5     ✔ tidyr     1.3.2
+✔ purrr     1.2.1     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(knitr)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<section id="how-do-the-lab-confirmed-cases-of-measles-in-italy-compare-across-each-specific-month-from-2012-to-2025" class="level3">
+<h3 class="anchored" data-anchor-id="how-do-the-lab-confirmed-cases-of-measles-in-italy-compare-across-each-specific-month-from-2012-to-2025">How do the lab-confirmed cases of measles in Italy compare across each specific month from 2012 to 2025?</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>monthly_lab_confirmed_measles <span class="ot">&lt;-</span> <span class="cf">function</span>(country_in) {</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  cases_month <span class="sc">|&gt;</span> </span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(country <span class="sc">==</span> country_in) <span class="sc">|&gt;</span> </span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(month) <span class="sc">|&gt;</span> </span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summarize</span>(<span class="at">total_lab_confirmed =</span> <span class="fu">sum</span>(measles_lab_confirmed))</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="fu">monthly_lab_confirmed_measles</span>(<span class="st">"Italy"</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">month =</span> <span class="fu">case_when</span>(month <span class="sc">==</span> <span class="dv">1</span> <span class="sc">~</span> <span class="st">"January"</span>, </span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">2</span> <span class="sc">~</span> <span class="st">"February"</span>, </span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">3</span> <span class="sc">~</span> <span class="st">"March"</span>, </span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">4</span> <span class="sc">~</span> <span class="st">"April"</span>, </span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">5</span> <span class="sc">~</span> <span class="st">"May"</span>, </span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">6</span> <span class="sc">~</span> <span class="st">"June"</span>, </span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">7</span> <span class="sc">~</span> <span class="st">"July"</span>, </span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">8</span> <span class="sc">~</span> <span class="st">"August"</span>, </span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">9</span> <span class="sc">~</span> <span class="st">"September"</span>, </span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">10</span> <span class="sc">~</span> <span class="st">"October"</span>, </span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">11</span> <span class="sc">~</span> <span class="st">"November"</span>, </span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>                           month <span class="sc">==</span> <span class="dv">12</span> <span class="sc">~</span> <span class="st">"December"</span>)) <span class="sc">|&gt;</span> </span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">kable</span>(<span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"Month"</span>, <span class="st">"Lab-Confirmed Measles Cases"</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Month</th>
+<th style="text-align: right;">Lab-Confirmed Measles Cases</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">January</td>
+<td style="text-align: right;">1002</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">February</td>
+<td style="text-align: right;">1386</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">March</td>
+<td style="text-align: right;">1890</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">April</td>
+<td style="text-align: right;">1978</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">May</td>
+<td style="text-align: right;">1795</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">June</td>
+<td style="text-align: right;">1502</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">July</td>
+<td style="text-align: right;">1084</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">August</td>
+<td style="text-align: right;">558</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">September</td>
+<td style="text-align: right;">373</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">October</td>
+<td style="text-align: right;">328</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">November</td>
+<td style="text-align: right;">407</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">December</td>
+<td style="text-align: right;">476</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="are-measles-cases-becoming-more-concentrated-in-a-smaller-number-of-countries-over-time" class="level3">
+<h3 class="anchored" data-anchor-id="are-measles-cases-becoming-more-concentrated-in-a-smaller-number-of-countries-over-time">Are measles cases becoming more concentrated in a smaller number of countries over time?</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Total global cases per year</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>global_totals <span class="ot">&lt;-</span> cases_year <span class="sc">%&gt;%</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(year) <span class="sc">%&gt;%</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">global_cases =</span> <span class="fu">sum</span>(measles_total, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="co">#Top 10 countries per year</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>top10 <span class="ot">&lt;-</span> cases_year <span class="sc">%&gt;%</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(year) <span class="sc">%&gt;%</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(year, <span class="fu">desc</span>(measles_total)) <span class="sc">%&gt;%</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice_head</span>(<span class="at">n =</span> <span class="dv">10</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">top10_cases =</span> <span class="fu">sum</span>(measles_total, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a><span class="co">#Concentration</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>concentration <span class="ot">&lt;-</span> <span class="fu">left_join</span>(global_totals, top10, <span class="at">by =</span> <span class="st">"year"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">top10_share =</span> top10_cases <span class="sc">/</span> global_cases)</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="co">#Plot</span></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(concentration, <span class="fu">aes</span>(<span class="at">x =</span> year, <span class="at">y =</span> top10_share)) <span class="sc">+</span></span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">linewidth =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Concentration of Measles Cases Over Time"</span>,</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"Share of Global Cases from Top 10 Countries"</span>,</span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Year"</span>,</span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Proportion of Global Cases (Top 10 Countries)"</span></span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Measles-Analysis_files/figure-html/unnamed-chunk-6-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="how-do-measles-case-outcomes-differ-across-regions-and-years" class="level3">
+<h3 class="anchored" data-anchor-id="how-do-measles-case-outcomes-differ-across-regions-and-years">How do measles case outcomes differ across regions and years?</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>calc_measles_case_quality <span class="ot">&lt;-</span> <span class="cf">function</span>(df) {</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  df <span class="sc">|&gt;</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>      <span class="at">clinical_rate =</span> measles_clinical <span class="sc">/</span> measles_total,</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">epi_link_rate =</span> measles_epi_linked <span class="sc">/</span> measles_total,</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">lab_confirm_rate =</span> measles_lab_confirmed <span class="sc">/</span> measles_total</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>cases_month <span class="sc">|&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">calc_measles_case_quality</span>() <span class="sc">|&gt;</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(region, year) <span class="sc">|&gt;</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">avg_clinical_rate =</span> <span class="fu">mean</span>(clinical_rate,  <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">avg_epi_link_rate =</span> <span class="fu">mean</span>(epi_link_rate, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">avg_lab_confirm_rate =</span> <span class="fu">mean</span>(lab_confirm_rate,  <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>spc_tbl_ [22,780 × 15] (S3: spec_tbl_df/tbl_df/tbl/data.frame)
- $ region               : chr [1:22780] "AFR" "AFR" "AFR" "AFR" ...
- $ country              : chr [1:22780] "Algeria" "Algeria" "Algeria" "Algeria" ...
- $ iso3                 : chr [1:22780] "DZA" "DZA" "DZA" "DZA" ...
- $ year                 : num [1:22780] 2012 2012 2012 2012 2012 ...
- $ month                : num [1:22780] 1 2 3 4 5 6 7 10 11 12 ...
- $ measles_suspect      : num [1:22780] 8 10 17 7 14 10 1 1 3 5 ...
- $ measles_clinical     : num [1:22780] 6 10 17 5 11 0 0 1 3 0 ...
- $ measles_epi_linked   : num [1:22780] 0 0 0 0 0 0 0 0 0 0 ...
- $ measles_lab_confirmed: num [1:22780] 2 0 0 0 0 0 0 0 0 0 ...
- $ measles_total        : num [1:22780] 8 10 17 5 11 0 0 1 3 0 ...
- $ rubella_clinical     : num [1:22780] NA NA NA 0 0 0 NA NA NA 0 ...
- $ rubella_epi_linked   : num [1:22780] NA NA NA 0 0 0 NA NA NA 0 ...
- $ rubella_lab_confirmed: num [1:22780] NA NA NA 1 3 8 NA NA NA 1 ...
- $ rubella_total        : num [1:22780] NA NA NA 1 3 8 NA NA NA 1 ...
- $ discarded            : num [1:22780] 0 0 0 2 3 10 1 0 0 5 ...
- - attr(*, "spec")=
-  .. cols(
-  ..   region = col_character(),
-  ..   country = col_character(),
-  ..   iso3 = col_character(),
-  ..   year = col_double(),
-  ..   month = col_double(),
-  ..   measles_suspect = col_double(),
-  ..   measles_clinical = col_double(),
-  ..   measles_epi_linked = col_double(),
-  ..   measles_lab_confirmed = col_double(),
-  ..   measles_total = col_double(),
-  ..   rubella_clinical = col_double(),
-  ..   rubella_epi_linked = col_double(),
-  ..   rubella_lab_confirmed = col_double(),
-  ..   rubella_total = col_double(),
-  ..   discarded = col_double()
-  .. )
- - attr(*, "problems")=&lt;externalptr&gt; </code></pre>
+<pre><code># A tibble: 82 × 5
+   region  year avg_clinical_rate avg_epi_link_rate avg_lab_confirm_rate
+   &lt;chr&gt;  &lt;dbl&gt;             &lt;dbl&gt;             &lt;dbl&gt;                &lt;dbl&gt;
+ 1 AFR     2012             0.313            0.0961                0.591
+ 2 AFR     2013             0.260            0.131                 0.609
+ 3 AFR     2014             0.376            0.113                 0.510
+ 4 AFR     2015             0.351            0.167                 0.482
+ 5 AFR     2016             0.406            0.134                 0.460
+ 6 AFR     2017             0.446            0.115                 0.438
+ 7 AFR     2018             0.531            0.111                 0.358
+ 8 AFR     2019             0.369            0.146                 0.485
+ 9 AFR     2020             0.298            0.135                 0.567
+10 AFR     2021             0.270            0.127                 0.603
+# ℹ 72 more rows</code></pre>
 </div>
 </div>
+</section>
+<section id="how-do-typical-seasonal-patterns-of-measles-cases-compare-across-regions" class="level3">
+<h3 class="anchored" data-anchor-id="how-do-typical-seasonal-patterns-of-measles-cases-compare-across-regions">How do typical seasonal patterns of measles cases compare across regions</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>calc_monthly_avg <span class="ot">&lt;-</span> <span class="cf">function</span>(region_name, df) {</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  df <span class="sc">|&gt;</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(region <span class="sc">==</span> region_name) <span class="sc">|&gt;</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(month) <span class="sc">|&gt;</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summarize</span>(</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">avg_measles_total =</span> <span class="fu">mean</span>(measles_total, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">prop_annual_cases =</span> avg_measles_total <span class="sc">/</span> <span class="fu">sum</span>(avg_measles_total),</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>      <span class="at">region =</span> region_name</span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>regions <span class="ot">&lt;-</span> cases_month <span class="sc">|&gt;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">distinct</span>(region) <span class="sc">|&gt;</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(region)</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>monthly_regional_avgs <span class="ot">&lt;-</span> regions <span class="sc">|&gt;</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">map</span>(calc_monthly_avg, <span class="at">df =</span> cases_month) <span class="sc">|&gt;</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list_rbind</span>() <span class="sc">|&gt;</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(region, month)</span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>monthly_regional_avgs</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 72 × 4
+   month avg_measles_total prop_annual_cases region
+   &lt;dbl&gt;             &lt;dbl&gt;             &lt;dbl&gt; &lt;chr&gt; 
+ 1     1             248.             0.151  AFR   
+ 2     2             314.             0.191  AFR   
+ 3     3             319.             0.194  AFR   
+ 4     4             185.             0.112  AFR   
+ 5     5             114.             0.0697 AFR   
+ 6     6              75.7            0.0461 AFR   
+ 7     7              64.4            0.0392 AFR   
+ 8     8              64.9            0.0395 AFR   
+ 9     9              58.7            0.0357 AFR   
+10    10              64.8            0.0395 AFR   
+# ℹ 62 more rows</code></pre>
+</div>
+</div>
+</section>
+</section>
 </section>
 
 </main>
