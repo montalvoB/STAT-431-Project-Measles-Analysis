@@ -169,3 +169,218 @@ monthly_regional_avgs <- regions |>
 
 monthly_regional_avgs
 ```
+
+## Checkpoint #3
+
+```{r}
+library(httr)
+library(tidyjson)
+library(jsonlite)
+library(glue)
+
+key <- "zfEiGYRkVgqfm6qQzlK3fHJ9HKEC7wMTOmdIGruS"
+countries <- unique(cases_year$country)
+```
+
+### GDP API
+
+The data set being loaded below came from API Ninjas, and it is the GDP API. It contains historical and current data on the Gross Domestic Product of countries around the world. The columns of the data set represent the growth of GDP, nominal GDP, and purchasing power parity. A few columns also have these variables in terms of per capita.
+
+```{r}
+
+get_country_gdp <- function(cntry) {
+  base_url <- "https://api.api-ninjas.com/v1/gdp?"
+  url <- glue("{base_url}country={URLencode(cntry, reserved = TRUE)}")
+  data <- GET(url, add_headers("X-Api-Key" = key))
+  df <- fromJSON(rawToChar(data$content))
+  return(df)
+}
+```
+
+```{r}
+
+country_gdp <- map(.x = countries,
+     .f = ~get_country_gdp(cntry = .x))
+```
+
+```{r}
+
+country_gdp_df <- bind_rows(country_gdp)
+```
+
+```{r}
+# country_gdp_df <- read.csv("country_gdp.csv")
+```
+
+This summary analyzes the top 10 and bottom 10 average GDP countries.
+
+```{r}
+library(ggplot2)
+
+top_bottom_gdp <- country_gdp_df |>
+  group_by(country) |>
+  summarize(avg_gdp_per_capita_ppp = mean(gdp_per_capita_ppp, na.rm = TRUE)) |>
+  arrange(desc(avg_gdp_per_capita_ppp)) |>
+  slice(c(1:10, (n() - 9):n())) |>
+  mutate(group = ifelse(row_number() <= 10, "Top 10", "Bottom 10"))
+
+top_bottom_gdp
+
+ggplot(top_bottom_gdp, aes(x = reorder(country, avg_gdp_per_capita_ppp),
+                            y = avg_gdp_per_capita_ppp,
+                            fill = group)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Top and Bottom 10 Countries by Average GDP per Capita (PPP)",
+       x = NULL, y = "Avg GDP per Capita PPP", fill = NULL) +
+  theme_minimal()
+```
+
+### Covid API
+
+The data set being loaded below came from API Ninjas, and it is the Covid-19 API. It contains historical data on Covid-19 cases for every country in the world. Each row is a country and each column is a date (of one single day) and what type of Covid-19 case it is (e.g. total, new cases that day). For example, one of the columns represents the new Covid-19 cases recorded on March 12, 2020. After pulling the data for all countries, we cleaned the set to represent the total number of cases of Covid-19 by month. Instead of each column representing a single day, each column now represents a single month of the given year (e.g. January 2020, August 2023).
+
+```{r}
+#| warning: false
+
+get_country_data <- function(country) {
+  if (str_detect(country, " ")) {
+    country = str_replace_all(country, " ", "%20")
+  }
+
+  base_url <- "https://api.api-ninjas.com/v1/covid19"
+  url <- glue("{base_url}?country={country}")
+
+  response <- GET(url, add_headers("X-Api-Key" = key))
+
+  if (status_code(response) != 200) {
+    warning(glue("Failed to fetch data for {country}: HTTP {status_code(response)}"))
+    return(NULL)
+  }
+
+  content <- content(response, as = "text", encoding = "UTF-8")
+  parsed <- fromJSON(content, flatten = TRUE)
+
+  if (length(parsed) == 0) {
+    warning(glue("No data returned for {country}"))
+    return(NULL)
+  }
+
+  as.data.frame(parsed)
+}
+safe_get_country_data <- safely(get_country_data)
+country_df <- map(countries, safe_get_country_data) |>
+  map("result") |>        # Extract just the result
+  compact() |>            # Drop NULLs
+  bind_rows()
+```
+
+```{r}
+#| warning: false
+
+covid_cleaned_df <- country_df |>
+  select(country, region, ends_with(".total")) |>
+  group_by(country) |>
+  summarise(across(ends_with(".total"), sum, na.rm = TRUE), .groups = "drop") |>
+  pivot_longer(
+    cols = ends_with(".total"),
+    names_to = "date",
+    values_to = "cases"
+  ) |>
+  mutate(month = str_extract(date, "\\d{4}-\\d{2}")) |>
+  group_by(country, month) |>
+  summarise(cases = max(cases, na.rm = TRUE), .groups = "drop") |>
+  pivot_wider(
+    names_from = month,
+    values_from = cases
+  )
+```
+
+```{r}
+covid_cleaned_df
+```
+
+How does the total number of measles cases compare to the total number of Covid-19 cases across countries in 2020?
+
+```{r}
+library(scales)
+
+# Total measles cases per country in 2020
+measles_2020 <- cases_year |>
+  filter(year == 2020) |>
+  select(country, measles_total_2020 = measles_total)
+
+# Total Covid-19 cases per country in 2020 (max cumulative value across 2020 months)
+covid_2020 <- covid_cleaned_df |>
+  select(country, starts_with("2020-")) |>
+  rowwise() |>
+  mutate(covid_total_2020 = max(c_across(starts_with("2020-")), na.rm = TRUE)) |>
+  ungroup() |>
+  select(country, covid_total_2020)
+
+# Join, keep top 10 by COVID cases
+comparison_2020 <- inner_join(measles_2020, covid_2020, by = "country") |>
+  arrange(desc(covid_total_2020)) |>
+  slice_head(n = 10)
+
+# Reshape for plotting
+comparison_long <- comparison_2020 |>
+  pivot_longer(
+    cols      = c(measles_total_2020, covid_total_2020),
+    names_to  = "disease",
+    values_to = "cases"
+  ) |>
+  mutate(
+    disease = case_when(
+      disease == "measles_total_2020" ~ "Measles",
+      disease == "covid_total_2020"   ~ "COVID-19"
+    ),
+    country = fct_reorder(country, cases, .fun = max)
+  )
+
+ggplot(comparison_long, aes(y = country, x = cases, fill = disease)) +
+  geom_col(
+    position = position_dodge(width = 0.75),
+    width    = 0.65
+  ) +
+  scale_x_log10(
+    labels = label_number(scale_cut = cut_short_scale()),
+    breaks = 10^(0:8)
+  ) +
+  scale_fill_manual(values = c("COVID-19" = "#D85A30", "Measles" = "#1D9E75")) +
+  labs(
+    title    = "Measles vs. COVID-19 Cases in 2020",
+    subtitle = "Top 10 countries by COVID-19 case count — log scale",
+    x        = "Total Cases (log scale)",
+    y        = NULL,
+    fill     = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position    = "top",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    axis.text.y        = element_text(size = 10)
+  )
+```
+
+### Meta Dataset
+
+```{r}
+join1 <- left_join(cases_year, covid_cleaned_df, by = join_by(country))
+```
+
+```{r}
+country_gdp_df <- country_gdp_df |> 
+  rename(country_code = country)
+join1 <- join1 |> 
+  rename(country_code = iso3)
+```
+
+```{r}
+all_data_joined <- left_join(join1, country_gdp_df, by = join_by(country_code))
+```
+
+```{r}
+head(all_data_joined)
+```
