@@ -1,6 +1,8 @@
 ---
 title: "Measles"
 format: html
+toc: true
+toc-location: left
 editor: visual
 author: Brandon Montalvo
 ---
@@ -125,7 +127,6 @@ calc_measles_case_quality <- function(df) {
 
 ```{r}
 
-
 cases_month |>
   calc_measles_case_quality() |>
   group_by(region, year) |>
@@ -198,18 +199,19 @@ get_country_gdp <- function(cntry) {
 ```
 
 ```{r}
-
+#| eval: False
 country_gdp <- map(.x = countries,
      .f = ~get_country_gdp(cntry = .x))
 ```
 
 ```{r}
+#| eval: False
 
 country_gdp_df <- bind_rows(country_gdp)
 ```
 
 ```{r}
-# country_gdp_df <- read.csv("country_gdp.csv")
+country_gdp_df <- read.csv("country_gdp.csv")
 ```
 
 This summary analyzes the top 10 and bottom 10 average GDP countries.
@@ -242,6 +244,7 @@ The data set being loaded below came from API Ninjas, and it is the Covid-19 API
 
 ```{r}
 #| warning: false
+#| eval: false
 
 get_country_data <- function(country) {
   if (str_detect(country, " ")) {
@@ -277,6 +280,7 @@ country_df <- map(countries, safe_get_country_data) |>
 
 ```{r}
 #| warning: false
+#| eval: false
 
 covid_cleaned_df <- country_df |>
   select(country, region, ends_with(".total")) |>
@@ -297,7 +301,7 @@ covid_cleaned_df <- country_df |>
 ```
 
 ```{r}
-covid_cleaned_df
+covid_cleaned_df <- read.csv("covid_cleaned.csv")
 ```
 
 How does the total number of measles cases compare to the total number of Covid-19 cases across countries in 2020?
@@ -312,9 +316,9 @@ measles_2020 <- cases_year |>
 
 # Total Covid-19 cases per country in 2020 (max cumulative value across 2020 months)
 covid_2020 <- covid_cleaned_df |>
-  select(country, starts_with("2020-")) |>
+  select(country, starts_with("X2020")) |>
   rowwise() |>
-  mutate(covid_total_2020 = max(c_across(starts_with("2020-")), na.rm = TRUE)) |>
+  mutate(covid_total_2020 = max(c_across(starts_with("X2020")), na.rm = TRUE)) |>
   ungroup() |>
   select(country, covid_total_2020)
 
@@ -384,3 +388,181 @@ all_data_joined <- left_join(join1, country_gdp_df, by = join_by(country_code))
 ```{r}
 head(all_data_joined)
 ```
+
+## Checkpoint #4
+
+### Visualizations
+
+```{r}
+#| echo: false
+#| output: false
+
+library(ggridges)
+
+covid_longer <- covid_cleaned_df |>
+  pivot_longer(cols = -country,
+               names_to = "year",
+               values_to = "count") |>
+  mutate(month = str_extract(year, "\\d{2}$"),
+         year = str_remove_all(year, "X"),
+         year = str_remove(year, "\\.\\d*$"),
+         year = as.numeric(year),
+         month = as.numeric(month),
+         iso3 = countrycode::countrycode(country, 
+                                         origin = "country.name", 
+                                         destination = "iso3c")) |>
+  rename(covid_count = count)
+
+covid_measles <- left_join(covid_longer, 
+          cases_month, 
+          by = c("iso3","year","month"))
+```
+
+```{r}
+#| echo: false
+#| output: false
+
+
+t <- unique(cases_month$country) |> head(10)
+cases_month |>
+  filter(country == t) |>
+  group_by(country, year) |>
+  ggplot(aes(x = measles_total, 
+             y = country)) +
+  geom_density_ridges()
+
+# measles_total
+```
+
+```{r}
+#| echo: false
+#| output: false
+
+unique(covid_longer$country) |> sort()
+```
+
+```{r}
+#| echo: false
+#| output: false
+
+covid_measles |>
+  filter(region == "AMR") |>
+  # Replace 0s with NA so log scale drops them cleanly instead of warning
+  mutate(
+    measles_total = na_if(measles_total, 0),
+    covid_count   = na_if(covid_count, 0),
+    total_burden  = measles_total + covid_count
+  ) |>
+  mutate(date = as.Date(paste(year, month, "01", sep = "-"))) |>
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = measles_total, color = "Measles")) +
+  geom_line(aes(y = covid_count, color = "COVID")) +
+  geom_ribbon(aes(ymin = measles_total, 
+                  ymax = total_burden, 
+                  fill = "COVID excess"),
+              alpha = 0.4, na.rm = TRUE) +
+  geom_line(aes(y = measles_total, color = "Measles baseline"), na.rm = TRUE) +
+  facet_wrap(~region) +
+  scale_y_log10(labels = scales::label_comma()) +
+  labs(title = "Disease burden: measles vs. COVID overlay by region")
+```
+
+```{r}
+#| echo: false
+#| output: false
+
+covid_measles |>
+  mutate(
+    measles_total = na_if(measles_total, 0),
+    covid_count   = na_if(covid_count, 0),
+    total_burden  = measles_total + covid_count
+  ) |>
+  filter(is.na(covid_count))
+```
+
+This lollipop plot visualizes the spread of total measles cases across the world by year. The peak in this graph is occurring at 2019. In the final report, we will explore further why this peak is happening and if there is a specific country that is responsible.
+
+```{r}
+#| fig-alt: "Lollipop plot showing the total number of measles cases in all countries by year.  Most years have similar totals, however there is a significant peak in 2019."
+
+global_totals <- cases_month |> 
+  group_by(year) |> 
+  summarize(total_cases = sum(measles_total, na.rm = TRUE))
+
+ggplot(global_totals, aes(x = year, y = total_cases)) + 
+  geom_segment(aes(yend = 0, 
+                   xend = year), 
+               color = "purple2") + 
+  geom_point(size = 4, color = "purple4") + 
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  theme_minimal() + 
+  labs(x = "Year", y = "Total Cases", 
+       title = "Measles Cases Across the World Over Time", 
+       subtitle = "Total Count of Global Cases by Year")
+```
+
+How does the total number of measles cases compare to the total number of Covid-19 cases across countries in 2020?
+
+```{r}
+#| fig-alt: "Horizontal bar graph comparing Covid-19 and measles cases in the 10 countries with the highest count of Covid-19 cases. Covid-19 cases significantly outnumber the measles cases."
+
+measles_2020 <- cases_year |>
+  filter(year == 2020) |>
+  select(country, measles_total_2020 = measles_total)
+
+covid_2020 <- covid_cleaned_df |>
+  select(country, starts_with("X2020")) |>
+  rowwise() |>
+  mutate(covid_total_2020 = max(c_across(starts_with("X2020")), 
+                                na.rm = TRUE)) |>
+  ungroup() |>
+  select(country, covid_total_2020)
+
+comparison_2020 <- inner_join(measles_2020, covid_2020, by = "country") |>
+  arrange(desc(covid_total_2020)) |>
+  slice_head(n = 10) |>
+  pivot_longer(cols = c(measles_total_2020, covid_total_2020), 
+               names_to = "disease", values_to = "cases") |>
+  mutate(disease = case_when(disease == "measles_total_2020" ~ "Measles", 
+                             disease == "covid_total_2020"   ~ "COVID-19"), 
+         country = fct_reorder(country, cases, .fun = max))
+
+ggplot(comparison_long, aes(y = country, x = cases, fill = disease)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+  scale_x_log10(labels = label_number(scale_cut = cut_short_scale()), 
+                breaks = 10^(0:8)) +
+  scale_fill_manual(values = c("COVID-19" = "#D85A30", 
+                               "Measles" = "#1D9E75")) +
+  labs(title    = "Measles vs. COVID-19 Cases in 2020", 
+       subtitle = "Top 10 countries by COVID-19 case count — log scale",
+       x = "Total Cases (log scale)", y = NULL, fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top", panel.grid.major.y = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.text.y = element_text(size = 10))
+```
+
+### Statistical Model
+
+**Research Question**: Is there a significant difference in mean GDP growth between countries with high versus low measles burden in 2019?
+
+-   Null Hypothesis: There is no difference in mean GPD growth between high and low measles burden countries in 2019
+
+-   Alternative Hypothesis: There is a difference in mean GDP growth between high and low measles burden countries in 2019
+
+```{r}
+
+cases_gdp_join <- inner_join(cases_year, country_gdp_df, 
+                             by = join_by(year, iso3 == country_code)) |>
+  mutate(
+      high_measles = measles_lab_confirmed > median(measles_lab_confirmed)
+      ) |>
+  filter(year == 2019)
+```
+
+```{r}
+
+t.test(gdp_growth ~ high_measles, data = cases_gdp_join)
+```
+
+**Conclusion**: Using the 2019 data, a year marked by a notable rise in measles cases, countries were classified as high measles burden if their lab-confirmed measles cases exceeded the median of 48 cases. A two sample t-test resulted in no significant difference in mean GDP growth between countries with high and low measles burden. Due to a t-value = -1.04 and a p-value = 0.299 \> alpha = 0.05, we fail to reject the null hypothesis.
