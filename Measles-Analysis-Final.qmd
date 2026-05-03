@@ -1,0 +1,638 @@
+---
+title: "Project 1 Final Analysis"
+author: "Hailey Hossain and Brandon Montalvo"
+format: html
+code-fold: true
+embed-resources: true
+editor: source
+code-tools: true
+theme: journal
+execute:
+  warning: false
+---
+
+## Measles Cases Analysis
+
+**Dataset**: World Health Organisation (WHO) Provisional Monthly Measles and Rubella Data, downloaded on 2025-06-12.
+
+**Source**: <https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-06-24/readme.md>
+
+The main data examined in this study focuses on measles and rubella cases across the world. There are two versions of this data: one that organizes data by month and one that organizes data by year. It was downloaded from the provisional monthly measles and rubella data of the World Health Organization on 2025-06-12. The World Health Organization collected this data from January 2012 to June 2025, and each observation recorded is a country at the specified month or year. The purpose of WHO collecting disease-specific data such as this is to track global outbreaks and aid policy decisions.
+
+Supplemental data was also used in this study to analyze trends and possible correlations. One of these data sets was focused on hisotrical Covid-19 data from across the world; it contains the total number of Covid-19 cases in each country from January 2020 to March 2023. This data was accessed via a secondary website, called API Ninjas, that collects various sets of data. API Ninjas most likely obtained this data and any country or health-based data from public census data. The second supplemental data set was focused on the Gross Domestic Product (GDP) of each country by year; it was collected from 1980 to 2026, as well as projected up to 2029. This data was also accessed via API Ninjas.
+
+## Research Questions
+
+**RQ1:** How does the concentration of measles compare across countries?
+
+**RQ2:** Did measles reporting drop during the COVID‑19 pandemic (2020-2021), and does the later rebound suggest it was suppressed?
+
+**RQ3:** Is there a significant difference in mean GDP growth between countries with high vs. low measles burden in 2019?
+
+
+## Data Summaries and Visualizations
+
+### RQ 1: How does the concentration of measles compare across countries?
+
+The figure below shows each year's global measles case total as a deviation from the 2013–2023 average. Years below the dashed line represent below-average burden; years above represent above-average burden. One year stands out immediately.
+
+```{r}
+#| label: "Load libraries"
+#| output: false
+
+library(tidyverse)
+library(knitr)
+library(gt)
+library(broom)
+library(scales)
+library(glue)
+```
+
+```{r}
+#| label: "Load Datasets"
+#| output: false
+
+cases_month <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
+cases_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
+
+country_gdp_df <- read.csv("country_gdp.csv")
+covid_cleaned_df <- read.csv("covid_cleaned.csv")
+
+```
+
+
+
+```{r}
+#| label: "lollipop graph"
+#| alt: "A lollipop plot showing annual deviation of global measles cases from the 2013–2023 mean, where 2019 stands out dramatically above all other years as the largest single-year surge in the study period."
+
+
+
+global_totals <- cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  group_by(year) |>
+  summarize(total_cases = sum(measles_total, na.rm = TRUE)) |>
+  mutate(
+    mean_cases = mean(total_cases),
+    deviation = total_cases - mean_cases,
+    above_avg = deviation > 0,
+    is_2019 = year == 2019
+  )
+
+# madagascar_2019_share <- cases_year |>
+#   filter(year == 2019) |>
+#   mutate(global_total = sum(measles_total, na.rm = TRUE),
+#          share = measles_total / global_total) |>
+#   filter(country == "Madagascar") |>
+#   pull(share) |>
+#   scales::percent(accuracy = 0.1)
+
+
+ggplot(global_totals, aes(x = year, y = deviation)) +
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             color = "gray50") +
+  geom_segment(aes(xend = year, yend = 0, color = above_avg), 
+               linewidth = 1) +
+  geom_point(aes(color = above_avg, size = is_2019)) +
+  annotate("text", x = 2019,
+           y = max(global_totals$deviation) * 0.8,
+           label = "2019: largest single-year\nsurge in the study period",
+           hjust = 1.15, size = 3.5,
+           fontface = "bold", color = "red3") +
+  scale_color_manual(
+    values = c("TRUE" = "tomato1", "FALSE" = "chartreuse3"),
+    labels = c("TRUE" = "Above Average", "FALSE" = "Below Average"),
+    name = NULL
+  ) +
+  scale_size_manual(values = c("TRUE" = 5, "FALSE" = 3), guide = "none") +
+  scale_x_continuous(breaks = 2013:2023) +
+  scale_y_continuous(labels = scales::label_comma()) +
+  labs(
+    title = "The 2019 Measles Surge Was an Unprecedented Outlier",
+    subtitle = "Annual deviation from the 2013–2023 mean global case count",
+    x = NULL,
+    y = "Cases Above / Below Average",
+    caption = "Figure 1: Visualization 1"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+```
+
+2019 was a clear statistical outlier, with global cases far exceeding any other year in the study period. The remaining years cluster near or below the average, suggesting 2019 was not part of a broader upward trend but rather an isolated spike. This raises the question: Was the 2019 surge driven by outbreaks across many countries simultaneously, or was it concentrated in just a few?
+
+
+To answer that, the table below breaks down each year's burden by the top contributing countries. For each year we report the total global case count, the share held by the single highest-burden country, the combined share of the 2nd and 3rd ranked countries, and the number of countries classified as major burden countries which is defined as holding at least 10% of global cases that year.
+
+```{r}
+#| label: "Concentration Function"
+
+calc_concentration <- function(year_in, df = cases_year) {
+  df |>
+    filter(year == year_in) |>
+    mutate(
+      global_total = sum(measles_total, na.rm = TRUE),
+      share = measles_total / global_total,
+      burden_tier = case_when(
+        share >= 0.10 ~ "Major (10%+ of global)",
+        share >= 0.01 ~ "Significant (1-10%)",
+        share >= 0.001 ~ "Minor (0.1-1%)",
+        TRUE ~ "Negligible"
+      )
+    ) |>
+    filter(burden_tier != "Negligible") |>
+    select(country, measles_total, share, burden_tier) |>
+    arrange(desc(share))
+}
+
+```
+
+```{r}
+#| label: "concentration summary function"
+key_years <- cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  distinct(year) |>
+  pull(year)
+
+summarize_concentration <- function(yr) {
+  calc_concentration(yr) |>
+    summarize(
+      year = yr,
+      global_total = sum(measles_total),
+      top1_country = first(country),
+      top1_share = first(share),
+      top2_3_share = sum(share[2:3]),
+      n_major = sum(burden_tier == "Major (10%+ of global)")
+    )
+}
+
+concentration_over_time <- map_dfr(key_years, summarize_concentration)
+```
+
+```{r}
+#| label: "Concentration table"
+
+concentration_over_time |>
+  gt() |>
+  tab_header(
+    title = "Global Measles Concentration by Year",
+    subtitle = "How burden is distributed across countries, 2013–2023"
+  ) |>
+  cols_label(
+    year = "Year",
+    global_total = "Global Cases",
+    top1_country = "Top Country",
+    top1_share = "Top Country",
+    top2_3_share = "2nd & 3rd Countries",
+    n_major = "# Major Burden Countries"
+  ) |>
+  tab_spanner(
+    label = "Share of Global Cases",
+    columns = c(top1_share, top2_3_share)
+  ) |>
+  fmt_percent(
+    columns = c(top1_share, top2_3_share),
+    decimals = 1
+  ) |>
+  fmt_number(columns = global_total, use_seps = TRUE, decimals = 0) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_fill(color = "tomato1"),
+    locations = cells_body(rows = year == 2019)
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = year == 2019)
+  ) |>
+  tab_footnote(
+  footnote = "2019 saw the largest global total in the study period, driven almost entirely by a single outbreak in Madagascar.",
+  locations = cells_body(columns = global_total, rows = year == 2019)
+)
+```
+
+The 2019 row reveals a striking pattern. Even though this year recorded the highest global total in the entire study period, only two countries met the threshold for major burden status, which is the smallest number among all high‑case years. The second and third countries together accounted for only 19.5 percent of global cases, showing that the surge in 2019 was driven almost entirely by a single country. In comparison, years such as 2014 and 2016 show much larger contributions from the second and third countries, indicating that the burden during those years was shared more evenly across multiple countries.
+
+
+The heatmap below makes this geographic concentration visible. Each row represents one of the top 15 highest-burden countries over the study period, and each cell is shaded by that country's share of global cases in that year. Darker cells indicate a higher share.
+
+```{r}
+#| label: "heatmap"
+#| alt: "A heatmap showing each of the top 15 measles-burden countries' share of global cases from 2013 to 2023, where India shows chronic dark shading across 2013–2017 and Madagascar shows a single dramatic spike in 2019 representing 39.4% of all global cases that year."
+
+
+
+top_countries <- cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  group_by(country) |>
+  summarize(total = sum(measles_total, na.rm = TRUE)) |>
+  slice_max(total, n = 15) |>
+  pull(country)
+
+# madagascar_2019_share <- cases_year |>
+#   filter(year == 2019) |>
+#   mutate(global_total = sum(measles_total, na.rm = TRUE),
+#          share = measles_total / global_total) |>
+#   filter(country == "Madagascar") |>
+#   pull(share) |>
+#   scales::percent(accuracy = 0.1)
+
+cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  group_by(year) |>
+  mutate(global_share = measles_total / sum(measles_total, na.rm = TRUE)) |>
+  ungroup() |>
+  filter(country %in% top_countries) |>
+  ggplot(aes(x = year, 
+             y = fct_reorder(country, global_share), 
+             fill = global_share)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradient(low = "cornsilk", high = "tomato1",
+                      labels = scales::percent,
+                      name = "Share of\nGlobal Cases") +
+  scale_x_continuous(breaks = 2013:2023) +
+  labs(
+    title = "Measles Burden Is Dominated by a Handful of Countries",
+    subtitle = "Share of global cases among top 15 burden countries, 2013–2023",
+    x = NULL, 
+    y = NULL,
+    caption = "Figure 3: Visualization 2"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+India stands out as the dominant chronic burden country, with consistently dark cells from 2013 through 2017 before its intensity fades in later years. This pattern reflects meaningful progress in measles control. Madagascar, in contrast, remains nearly invisible until 2019, when its cell darkens sharply to represent 39.4 percent of all global cases that year. Taken together, these patterns show that measles concentration is not fixed over time. The countries driving the global burden shift, with some exhibiting long‑term sustained burden and others experiencing brief, intense outbreaks.
+
+
+While the heatmap highlights how the distribution of cases shifts from year to year, the table below takes a cumulative perspective by ranking the top fifteen countries based on their total measles cases across the entire 2013 to 2023 period. This view shows which countries have been the most consistent contributors to the global burden, independent of fluctuations in any single year.
+
+```{r}
+
+summarize_country_burden <- function(df = cases_year,
+                                     start_yr = 2013,
+                                     end_yr = 2023) {
+  total_global <- df |>
+    filter(between(year, start_yr, end_yr)) |>
+    pull(measles_total) |>
+    sum(na.rm = TRUE)
+
+  df |>
+    filter(between(year, start_yr, end_yr)) |>
+    group_by(country) |>
+    summarize(
+      total_cases = sum(measles_total, na.rm = TRUE),
+      peak_year = year[which.max(measles_total)],
+      peak_cases = max(measles_total, na.rm = TRUE),
+      global_share = total_cases / total_global
+    ) |>
+    arrange(desc(total_cases)) |>
+    slice_head(n = 15)
+}
+
+summarize_country_burden() |>
+  gt() |>
+  tab_header(
+    title = "Chronic Measles Burden by Country",
+    subtitle = "Top 15 countries by total measles cases, 2013–2023"
+  ) |>
+  tab_caption("Figure 4: Table 2") |>
+  cols_label(
+    country = "Country",
+    total_cases = "Total Cases",
+    global_share = "Global Share",
+    peak_year = "Peak Year",
+    peak_cases = "Peak Cases"
+  ) |>
+  fmt_number(
+    columns = c(total_cases, peak_cases),
+    use_seps = TRUE,
+    decimals = 0
+  ) |>
+  fmt_percent(
+    columns = global_share,
+    decimals = 1
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_fill(color = "tomato1"),
+    locations = cells_body(rows = country == "Madagascar")
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = country == "Madagascar")
+  ) |>
+  tab_style(
+    style = cell_fill(color = "lightcyan"),
+    locations = cells_body(rows = country == "India")
+  ) |>
+  data_color(
+    columns = global_share,
+    method = "numeric",
+    palette = c("cornsilk", "tomato1")
+  ) |>
+  tab_footnote(
+    footnote = "Madagascar's total is almost entirely from its 2019 outbreak, 
+                 unlike India whose burden is spread across multiple years.",
+    locations = cells_body(columns = peak_cases, rows = country == "Madagascar")
+  )
+```
+
+India leads by a wide margin, recording the highest total number of cases across the decade and reflecting a long‑standing, sustained burden even though its annual share has declined in recent years. Madagascar ranks second despite contributing almost nothing outside of 2019, which shows just how extreme that single outbreak was. The footnote on Madagascar’s row highlights this contrast clearly: India’s burden is spread across many years, whereas Madagascar’s total is almost entirely the result of one catastrophic year. Together, these two countries account for a disproportionate share of global measles cases over the study period, illustrating that concentration in measles burden can arise from very different dynamics, including chronic systemic challenges in some countries and intense isolated outbreaks in others.
+
+### RQ2: Did measles reporting drop during the COVID‑19 pandemic (2020-2021), and does the later rebound suggest it was suppressed.
+
+The graph below represents the total measles case count worldwide from 2019 to 2023. Madagascar is excluded from this figure as its 2019 outbreak (39.4% of global cases) would otherwise dominate the baseline, masking the global trend of interest.
+
+```{r}
+#| label: intro visual
+#| fig-alt: "Line graph showing the total reported cases of measles across the world from 2019 to 2023. There is a significant drop in number of cases from 2019 to 2020, and the number of cases does not rish again until 2023."
+
+cases_year |>
+  filter(between(year, 2019, 2023), country != "Madagascar") |>
+  group_by(year) |>
+  summarize(total_cases = sum(measles_total, na.rm = TRUE)) |>
+  ggplot(aes(x = year, y = total_cases)) +
+  geom_line(color = "tomato1", linewidth = 1) +
+  geom_point(size = 3, color = "tomato1") +
+  scale_y_continuous(labels = scales::label_comma()) +
+  scale_x_continuous(breaks = 2019:2023) +
+  labs(
+    title = "Global Measles Cases Declined After the 2019 Surge",
+    subtitle = "Total reported cases, 2019–2023", 
+    caption = "Figure 5: Visualization 3",
+    x = NULL, y = "Total Cases"
+  ) +
+  theme_minimal()
+```
+
+
+There is a significant drop in measles cases after 2019, more specifically from 2020-2022. These years align with the timeline of the COVID-19 pandemic, hinting at a possible correlation that will be explored further.
+
+The table below takes the top 8 countries with the highest concentration of COVID-19 cases in 2020 and 2022 and compares the total count of COVID-19 cases to the total count of measles cases in these years.
+
+
+```{r}
+#| label: rq2 summary 1 function line graph
+
+measles_covid_compare <- function(year1, m_df = cases_year, 
+                                  c_df = covid_cleaned_df){
+  
+  measles_year <- m_df |>
+    filter(year == year1) |>
+    select(country, measles_total_year = measles_total)
+  
+  covid_year <- c_df |>
+    select(country, starts_with(glue("X{year1}"))) |>
+    rowwise() |>
+    mutate(covid_total_year = max(c_across(starts_with(glue("X{year1}"))), 
+                                  na.rm = TRUE)) |>
+    ungroup() |>
+    select(country, covid_total_year)
+  
+  comparison_year <- inner_join(measles_year, covid_year, by = "country") |>
+    arrange(desc(covid_total_year)) |>
+    slice_head(n = 10) |>
+    pivot_longer(cols = c(measles_total_year, covid_total_year), 
+                 names_to = "disease", values_to = "cases") |>
+    mutate(disease = case_when(disease == glue("measles_total_year") 
+                               ~ "Measles", 
+                               disease == glue("covid_total_year") 
+                               ~ "COVID-19"), 
+           country = fct_reorder(country, cases, .fun = max))
+  
+  return(comparison_year)
+  
+}
+```
+
+
+```{r}
+#| label: rq2 summary table1
+
+compare2020 <- measles_covid_compare(2020) |> 
+  pivot_wider(names_from = disease, 
+              values_from = cases) |> 
+  rename("Measles_20" = "Measles", 
+         "COVID-19_20" = "COVID-19")
+compare2022 <- measles_covid_compare(2022) |> 
+  pivot_wider(names_from = disease, 
+              values_from = cases) |> 
+  rename("Measles_22" = "Measles", 
+         "COVID-19_22" = "COVID-19")
+
+inner_join(compare2020, compare2022, by = "country") |> 
+  gt() |> 
+  fmt_integer(columns = c("Measles_20", "COVID-19_20", 
+                          "Measles_22", "COVID-19_22")) |> 
+  tab_spanner(
+    label = "2020",
+    columns = c("Measles_20", "COVID-19_20")
+  ) |> 
+  tab_spanner(
+    label = "2022",
+    columns = c("Measles_22", "COVID-19_22")
+  ) |> 
+  tab_header(
+    title = "Total Measles and COVID-19 Cases by Country", 
+    subtitle = "Countries with Highest Concentration of COVID-19 Cases in 2020 and 2022"
+  ) |> 
+  tab_caption(
+    caption = "Figure 6: Table 3"
+  ) |> 
+  cols_label(
+    country = "Country", 
+    "Measles_20" = "Measles", "Measles_22" = "Measles", 
+    "COVID-19_20" = "COVID-19", "COVID-19_22" = "COVID-19"
+  ) |> 
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  )
+```
+
+COVID-19 cases clearly outnumber measles cases in both 2020 and 2022 by millions of cases. There are two explanations for this: there is an overall lower total number of measles cases in countries or there is a drop in reporting of measles cases due to more focus on the reporting of COVID-19 cases. If we focus on the countries included in Figure 6 we can also see that half of the countries are apart of the European Region (EUR) with the others being apart of the South-East Asia Region (SEAR) and the Region of the Americas (AMR).
+
+The next table below compares the average number of COVID-19 cases across regions in 2020 and 2022. The mean number of the total cases in each country was taken for each region, both in 2020 when the COVID-19 pandemic first hit and in 2022 when the aftermath of the pandemic was being considered.
+
+```{r}
+#| label: rq2 summary 2 function
+
+region_means <- function(year, df1 = cases_month, covid = covid_cleaned_df){
+  region_df <- df1 |> 
+    distinct(region, country)
+  
+  mean_df <- covid |> 
+    left_join(region_df, by = "country") |> 
+    select(country, region, starts_with(glue("X{year}"))) |>
+    rowwise() |>
+    mutate(covid_total = max(c_across(starts_with(glue("X{year}"))), 
+                             na.rm = TRUE)) |>
+    ungroup() |>
+    select(region, covid_total) |> 
+    group_by(region) |> 
+    summarise(covid_mean = mean(covid_total)) |> 
+    filter(!is.na(region))
+  
+  return(mean_df)
+}
+```
+
+
+
+```{r}
+#| label: rq2 summary table2
+
+means_joined <- inner_join(region_means(2020), region_means(2022), 
+                           by = "region")
+
+means_joined |> 
+  gt() |> 
+  fmt_integer(columns = c(covid_mean.x, covid_mean.y)) |> 
+  tab_spanner(
+    label = "Mean Cases", 
+    columns = c(covid_mean.x, covid_mean.y)
+  ) |> 
+  tab_header(
+    title = "Average Number of COVID-19 Cases by Region", 
+    subtitle = "Comparison of Mean Cases by Region in 2020 and 2022"
+  ) |> 
+  tab_caption(
+    caption = "Figure 7: Table 4"
+  ) |> 
+  cols_label(
+    region = "Region", 
+    covid_mean.x = "2020", covid_mean.y = "2022"
+  ) |> 
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  )
+```
+
+The clear outlier in Figure 7 is the South-East Asia Region which in 2020 reach an average of 1.3 million COVID-19 cases while the other regions stay in the range of tens of thousands to hundreds of thousands of average cases and no others breaking into the millions. This pattern carried over to 2022 where SEAR is still the leading region in average COVID-19 cases; though, most of the other regions have now reached the millions in terms of average cases. Another pattern that has been consistent through Table 3 and Table 4 is that the aftermath of the COVID-19 pandemic (represented through the year 2022) has higher total counts of cases and higher average counts of cases; this suggests a higher priority put on reporting COVID-19 cases rather than measles cases.
+
+The results of Table 4 can be more clearly represented through the grouped lollipop chart below. Each region is separated from one another, and there are two segments in each group representing the years 2020 and 2022.
+
+```{r}
+#| label: rq2 visualization2 lollipop
+#| fig-alt: "."
+
+means_joined |> 
+  rename("2020" = covid_mean.x, "2022" = covid_mean.y) |> 
+  pivot_longer(cols = c("2020", "2022"), 
+               names_to = "year", values_to = "mean") |> 
+  ggplot(aes(x = year, y = mean, color = region)) + 
+  geom_segment(aes(x = year, xend = year, y = 0, yend = mean), 
+               position = position_dodge(width = 0.5)) + 
+  geom_point(aes(color = region), size = 4,
+             position = position_dodge(width = 0.5)) + 
+  scale_color_manual(values = c("aquamarine3", "coral", "darkorchid2", 
+                                "deeppink", "darkgreen", "darkgoldenrod1")) +
+  facet_wrap(~region) + 
+  scale_y_continuous(labels = comma) +
+  theme_minimal() + 
+  labs(x = "Year", y = "Mean", color = "Region", 
+       title = "Average COVID-19 Cases by Region", 
+       subtitle = "Comparison Between 2020 and 2022", 
+       caption = "Figure 8: Visualization 4")
+```
+
+
+As expected from the results of Table 4, Figure 8 shows a dominance of mean COVID-19 cases from the South-East Asia Region and the European Region. Across all regions, the average number of cases in 2022 is higher than the average number of cases in 2020.
+
+The differing reporting of COVID-19 and measles cases mentioned previously is represented in the horizontal bar graph below, once again returning to the top countries with the highest concentrations of COVID-19 cases. Due to COVID-19 cases outnumbering measles cases by several orders of magnitude, the x-axis uses a log scale in order for both diseases to remain visible.
+
+
+```{r}
+#| label: rq2 visualization1 col graph
+#| fig-alt: "Horizontal bar graph comparing Covid-19 and measles cases in the 10 countries with the highest count of Covid-19 cases. Covid-19 cases significantly outnumber the measles cases."
+
+measles_covid_compare(2020) |> 
+  ggplot(aes(y = country, x = cases, fill = disease)) +
+    geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+    scale_x_log10(labels = label_number(scale_cut = cut_short_scale()), 
+                  breaks = 10^(0:8)) +
+    scale_fill_manual(values = c("COVID-19" = "#D85A30", 
+                                 "Measles" = "#1D9E75")) +
+    labs(title    = "Measles vs. COVID-19 Cases in 2020", 
+         subtitle = "Top 10 countries by COVID-19 case count — log scale",
+         x = "Total Cases (log scale)", y = NULL, fill = NULL, 
+         caption = "Figure 9: Visualization 5") +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "top", panel.grid.major.y = element_blank(), 
+          panel.grid.minor = element_blank(), 
+          axis.text.y = element_text(size = 10))
+```
+
+Figure 9 once again showcases the outnumbering of reported COVID-19 cases to measles cases in 2020 when the COVID-19 pandemic was in full-force. Even with the x-axis on a log scale, the difference is clear. Measles cases only reach up to around ten thousand cases on a log scale while COVID-19 cases reach up to ten million cases on a log scale.
+
+## Statistical Model
+
+### RQ3: Is there a significant difference in mean GDP growth between countries with high vs. low measles burden in 2019?
+
+### T-test
+
+-   Null Hypothesis: There is no difference in mean GPD growth between high and low measles burden countries in 2019
+
+-   Alternative Hypothesis: There is a difference in mean GDP growth between high and low measles burden countries in 2019
+
+To answer this research question, the model below fits a linear regression model between GDP growth and the total number of measles and rubella cases
+
+```{r}
+#| label: "join measles + gdp"
+
+cases_gdp_join <- inner_join(cases_year, country_gdp_df, 
+                             by = join_by(year, iso3 == country)) |>
+  mutate(
+      high_measles = measles_lab_confirmed > median(measles_lab_confirmed)
+      ) |>
+  filter(year == 2019)
+```
+
+
+```{r}
+#| label: "t-test"
+tt <- t.test(gdp_growth ~ high_measles, data = cases_gdp_join)
+
+```
+
+```{r}
+#| label: "t-test table"
+
+tidy(tt) |>
+  mutate(alternative = "Two-sided test (μ₁ ≠ μ₂)") |>
+  gt() |>
+  tab_header(
+    title = md("**Two-Sample t-test Results**"),
+    subtitle = "Comparison of mean GDP growth between high and low measles burden countries in 2019"
+    ) |>
+  cols_label(
+    estimate1 = "Mean GDP growth (Low Measles)",
+    estimate2 = "Mean GDP growth (High Measles)",
+    statistic = "t statistic",
+    parameter = "df",
+    p.value = "p-value",
+    estimate = "Mean difference",
+    conf.low = "CI lower",
+    conf.high = "CI upper",
+    method = "Method",
+    alternative = "Alternative Hypothesis"
+  ) |>
+  fmt_number(columns = everything(), decimals = 4)
+```
+
+**Conclusion**: Using the 2019 data, a year marked by a notable rise in measles cases, countries were classified as high measles burden if their lab-confirmed measles cases exceeded the median of 48 cases. A two sample t-test resulted in no significant difference in mean GDP growth between countries with high and low measles burden. Due to a t-value = -1.04 and a p-value = 0.299 \> alpha = 0.05, we fail to reject the null hypothesis.
