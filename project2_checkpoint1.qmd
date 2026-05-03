@@ -4,9 +4,9 @@ format:
   dashboard:
     nav-buttons:
       - icon: linkedin
-        href: www.linkedin.com/in/hailey-hossain
+        href: "https://www.linkedin.com/in/hailey-hossain"
       - icon: envelope
-        href: Brandon.mont4@gmail.com
+        href: "mailto:Brandon.mont4@gmail.com"
         aria-label: "Email"
     theme: minty
     orientation: columns
