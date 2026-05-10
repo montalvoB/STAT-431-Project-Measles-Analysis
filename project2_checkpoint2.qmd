@@ -1,0 +1,549 @@
+---
+title: "Measles Analysis"
+format: 
+  dashboard:
+    nav-buttons:
+      - icon: linkedin
+        href: "https://www.linkedin.com/in/hailey-hossain"
+      - icon: envelope
+        href: "mailto:Brandon.mont4@gmail.com"
+        aria-label: "Email"
+    theme: minty
+    orientation: columns
+embed-resources: true
+logo: medical-file.svg
+logo-alt: "Medical file logo."
+---
+
+```{r}
+#| label: packages-setup
+#| message: false
+
+library(httr)
+library(tidyverse)
+library(tidyjson)
+library(jsonlite)
+library(tidyverse)
+library(glue)
+library(lubridate)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(broom)
+library(gt)
+library(leaflet)
+```
+
+```{r}
+cases_month <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
+cases_year <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
+```
+
+```{r}
+covid_cleaned_df <- read.csv("covid_cleaned.csv")
+country_gdp <- read.csv("country_gdp.csv")
+```
+
+```{r}
+#| label: concentration function
+
+calc_concentration <- function(year_in, df = cases_year) {
+  df |>
+    filter(year == year_in) |>
+    mutate(
+      global_total = sum(measles_total, na.rm = TRUE),
+      share = measles_total / global_total,
+      burden_tier = case_when(
+        share >= 0.10 ~ "Major (10%+ of global)",
+        share >= 0.01 ~ "Significant (1-10%)",
+        share >= 0.001 ~ "Minor (0.1-1%)",
+        TRUE ~ "Negligible"
+      )
+    ) |>
+    filter(burden_tier != "Negligible") |>
+    select(country, measles_total, share, burden_tier) |>
+    arrange(desc(share))
+}
+
+```
+
+```{r}
+#| label: concentration summary
+key_years <- cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  distinct(year) |>
+  pull(year)
+
+summarize_concentration <- function(yr) {
+  calc_concentration(yr) |>
+    summarize(
+      year = yr,
+      global_total = sum(measles_total),
+      top1_country = first(country),
+      top1_share = first(share),
+      top2_3_share = sum(share[2:3]),
+      n_major = sum(burden_tier == "Major (10%+ of global)")
+    )
+}
+
+concentration_over_time <- map_dfr(key_years, summarize_concentration)
+```
+
+```{r}
+#| label: rq2 summary 1 function
+
+measles_covid_compare <- function(year1, m_df = cases_year, 
+                                  c_df = covid_cleaned_df){
+  
+  measles_year <- m_df |>
+    filter(year == year1) |>
+    select(country, measles_total_year = measles_total)
+  
+  covid_year <- c_df |>
+    select(country, starts_with(glue("X{year1}"))) |>
+    rowwise() |>
+    mutate(covid_total_year = max(c_across(starts_with(glue("X{year1}"))), 
+                                  na.rm = TRUE)) |>
+    ungroup() |>
+    select(country, covid_total_year)
+  
+  comparison_year <- inner_join(measles_year, covid_year, by = "country") |>
+    arrange(desc(covid_total_year)) |>
+    slice_head(n = 10) |>
+    pivot_longer(cols = c(measles_total_year, covid_total_year), 
+                 names_to = "disease", values_to = "cases") |>
+    mutate(disease = case_when(disease == glue("measles_total_year") 
+                               ~ "Measles", 
+                               disease == glue("covid_total_year") 
+                               ~ "COVID-19"), 
+           country = fct_reorder(country, cases, .fun = max))
+  
+  return(comparison_year)
+  
+}
+```
+
+```{r}
+#| label: rq2 summary 2 function
+
+region_means <- function(year, df1 = cases_month, covid = covid_cleaned_df){
+  region_df <- df1 |> 
+    distinct(region, country)
+  
+  mean_df <- covid |> 
+    left_join(region_df, by = "country") |> 
+    select(country, region, starts_with(glue("X{year}"))) |>
+    rowwise() |>
+    mutate(covid_total = max(c_across(starts_with(glue("X{year}"))), 
+                             na.rm = TRUE)) |>
+    ungroup() |>
+    select(region, covid_total) |> 
+    group_by(region) |> 
+    summarise(covid_mean = mean(covid_total)) |> 
+    filter(!is.na(region))
+  
+  return(mean_df)
+}
+```
+
+```{r}
+cases_gdp_join <- inner_join(cases_year, country_gdp, 
+                             by = join_by(year, iso3 == country)) |>
+    mutate(
+      high_measles = measles_lab_confirmed > median(measles_lab_confirmed)
+      ) |>
+  filter(year == 2019)
+```
+
+```{r}
+tt <- t.test(gdp_growth ~ high_measles, data = cases_gdp_join)
+```
+
+```{r}
+#| error: true
+world_countries <- read.csv("country-coord.csv") |> 
+  rename(lat = Latitude..average., 
+         long = Longitude..average.)
+```
+
+# Measles by Country
+
+## Data and Explanations
+
+### Data Context & Research Question {height="30%"}
+
+::: panel-tabset
+## Measles Data
+
+</br>
+
+The main data examined in this study focuses on **measles and rubella cases** across the world. There are two versions of this data: one that organizes data by month and one that organizes data by year. It was downloaded from the provisional monthly measles and rubella data of the World Health Organization on 2025-06-12. The World Health Organization collected this data from January 2012 to June 2025, and each observation recorded is a country at the specified month or year. The purpose of WHO collecting disease-specific data such as this is to track global outbreaks and aid policy decisions.
+
+## Research Question
+
+</br>
+
+How does the **concentration** of measles compare across **countries**?
+:::
+
+### Tables {height="70%"}
+::: {.card}
+::: panel-tabset
+
+## Measles Concentration
+
+</br>
+
+```{r}
+#| label: concentration table
+
+concentration_over_time |>
+  gt() |>
+  tab_header(
+    title = "Global Measles Concentration by Year",
+    subtitle = "How burden is distributed across countries, 2013–2023"
+  ) |>
+  cols_label(
+    year = "Year",
+    global_total = "Global Cases",
+    top1_country = "Top Country",
+    top1_share = "Top Country",
+    top2_3_share = "2nd & 3rd Countries",
+    n_major = "# Major Burden Countries"
+  ) |>
+  tab_spanner(
+    label = "Share of Global Cases",
+    columns = c(top1_share, top2_3_share)
+  ) |>
+  fmt_percent(
+    columns = c(top1_share, top2_3_share),
+    decimals = 1
+  ) |>
+  fmt_number(columns = global_total, use_seps = TRUE, decimals = 0) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_fill(color = "tomato1"),
+    locations = cells_body(rows = year == 2019)
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = year == 2019)
+  ) |>
+  tab_footnote(
+  footnote = "2019 saw the largest global total in the study period, driven almost entirely by a single outbreak in Madagascar.",
+  locations = cells_body(columns = global_total, rows = year == 2019)
+) |> 
+  tab_caption(
+    caption = "Figure 2: Table 1"
+  )
+```
+
+## Country Burden
+
+</br>
+
+```{r}
+summarize_country_burden <- function(df = cases_year,
+                                     start_yr = 2013,
+                                     end_yr = 2023) {
+  total_global <- df |>
+    filter(between(year, start_yr, end_yr)) |>
+    pull(measles_total) |>
+    sum(na.rm = TRUE)
+
+  df |>
+    filter(between(year, start_yr, end_yr)) |>
+    group_by(country) |>
+    summarize(
+      total_cases = sum(measles_total, na.rm = TRUE),
+      peak_year = year[which.max(measles_total)],
+      peak_cases = max(measles_total, na.rm = TRUE),
+      global_share = total_cases / total_global
+    ) |>
+    arrange(desc(total_cases)) |>
+    slice_head(n = 15)
+}
+
+summarize_country_burden() |>
+  gt() |>
+  tab_header(
+    title = "Chronic Measles Burden by Country",
+    subtitle = "Top 15 countries by total measles cases, 2013–2023"
+  ) |>
+  tab_caption("Figure 4: Table 2") |>
+  cols_label(
+    country = "Country",
+    total_cases = "Total Cases",
+    global_share = "Global Share",
+    peak_year = "Peak Year",
+    peak_cases = "Peak Cases"
+  ) |>
+  fmt_number(
+    columns = c(total_cases, peak_cases),
+    use_seps = TRUE,
+    decimals = 0
+  ) |>
+  fmt_percent(
+    columns = global_share,
+    decimals = 1
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) |>
+  tab_style(
+    style = cell_fill(color = "tomato1"),
+    locations = cells_body(rows = country == "Madagascar")
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = country == "Madagascar")
+  ) |>
+  tab_style(
+    style = cell_fill(color = "lightcyan"),
+    locations = cells_body(rows = country == "India")
+  ) |>
+  data_color(
+    columns = global_share,
+    method = "numeric",
+    palette = c("cornsilk", "tomato1")
+  ) |>
+  tab_footnote(
+    footnote = "Madagascar's total is almost entirely from its 2019 outbreak, 
+                 unlike India whose burden is spread across multiple years.",
+    locations = cells_body(columns = peak_cases, rows = country == "Madagascar")
+  )
+```
+
+:::
+:::
+
+## Visualizations
+
+::: {.card title="Density of Measles Cases"}
+::: panel-tabset
+## Lollipop Graph
+
+</br>
+
+```{r}
+#| label: lollipop graph
+#| fig-alt: "A lollipop plot showing annual deviation of global measles cases from the 2013–2023 mean, where 2019 stands out dramatically above all other years as the largest single-year surge in the study period."
+
+global_totals <- cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  group_by(year) |>
+  summarize(total_cases = sum(measles_total, na.rm = TRUE)) |>
+  mutate(
+    mean_cases = mean(total_cases),
+    deviation = total_cases - mean_cases,
+    above_avg = deviation > 0,
+    is_2019 = year == 2019
+  )
+
+madagascar_2019_share <- cases_year |>
+  filter(year == 2019) |>
+  mutate(global_total = sum(measles_total, na.rm = TRUE),
+         share = measles_total / global_total) |>
+  filter(country == "Madagascar") |>
+  pull(share) |>
+  scales::percent(accuracy = 0.1)
+
+
+ggplot(global_totals, aes(x = year, y = deviation)) +
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             color = "gray50") +
+  geom_segment(aes(xend = year, yend = 0, color = above_avg), 
+               linewidth = 1) +
+  geom_point(aes(color = above_avg, size = is_2019)) +
+  annotate("text", x = 2019,
+           y = max(global_totals$deviation) * 0.8,
+           label = "2019: largest single-year\nsurge in the study period",
+           hjust = 1.15, size = 3.5,
+           fontface = "bold", color = "red3") +
+  scale_color_manual(
+    values = c("TRUE" = "tomato1", "FALSE" = "chartreuse3"),
+    labels = c("TRUE" = "Above Average", "FALSE" = "Below Average"),
+    name = NULL
+  ) +
+  scale_size_manual(values = c("TRUE" = 5, "FALSE" = 3), guide = "none") +
+  scale_x_continuous(breaks = 2013:2023) +
+  scale_y_continuous(labels = scales::label_comma()) +
+  labs(
+    title = "The 2019 Measles Surge Was an Unprecedented Outlier",
+    subtitle = "Annual deviation from the 2013–2023 mean global case count",
+    x = NULL,
+    y = "Cases Above / Below Average",
+    caption = "Figure 1: Visualization 1"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+```
+
+**2019** was a clear statistical outlier, with global cases far exceeding any other year in the study period. The remaining years cluster near or below the average, suggesting 2019 was not part of a broader upward trend but rather an **isolated spike**. This raises the question: Was the 2019 surge driven by outbreaks across **many countries simultaneously**, or was it **concentrated** in just a few?
+
+## Heatmap
+
+</br>
+
+```{r}
+#| label: heatmap
+#| fig-alt: "A heatmap showing each of the top 15 measles-burden countries' share of global cases from 2013 to 2023, where India shows chronic dark shading across 2013–2017 and Madagascar shows a single dramatic spike in 2019 representing 39.4% of all global cases that year."
+
+top_countries <- cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  group_by(country) |>
+  summarize(total = sum(measles_total, na.rm = TRUE)) |>
+  slice_max(total, n = 15) |>
+  pull(country)
+
+madagascar_2019_share <- cases_year |>
+  filter(year == 2019) |>
+  mutate(global_total = sum(measles_total, na.rm = TRUE),
+         share = measles_total / global_total) |>
+  filter(country == "Madagascar") |>
+  pull(share) |>
+  scales::percent(accuracy = 0.1)
+
+cases_year |>
+  filter(between(year, 2013, 2023)) |>
+  group_by(year) |>
+  mutate(global_share = measles_total / sum(measles_total, na.rm = TRUE)) |>
+  ungroup() |>
+  filter(country %in% top_countries) |>
+  ggplot(aes(x = year, 
+             y = fct_reorder(country, global_share), 
+             fill = global_share)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradient(low = "cornsilk", high = "tomato1",
+                      labels = scales::percent,
+                      name = "Share of\nGlobal Cases") +
+  scale_x_continuous(breaks = 2013:2023) +
+  labs(
+    title = "Measles Burden Is Dominated by a Handful of Countries",
+    subtitle = "Share of global cases among top 15 burden countries, 2013–2023",
+    x = NULL, 
+    y = NULL,
+    caption = "Figure 3: Visualization 2"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+India stands out as the dominant chronic burden country with consistent dark cells from 2013-2017 before its intensity fades in later years. This pattern reflects meaningful progress in measles control. Madagascar, in contrast, remains nearly invisible until 2019 when its cell darkens sharply. Taken together, these patterns show that measles concentration is **not fixed over time**.
+
+## 2019 Measles Cases
+
+</br>
+
+```{r}
+#| error: true
+map_data <- cases_year |> 
+  filter(year == 2019) |> 
+  select(!region) |> 
+  inner_join(world_countries, by = join_by(iso3 == Alpha.3.code))
+
+leaflet(map_data) |> 
+  addTiles() |> 
+  addMarkers(
+    lng = map_data$long, 
+    lat = map_data$lat, 
+    label = paste(map_data$country), 
+    popup = paste(map_data$country, "<br>", 
+                  "Total Cases : ", map_data$`measles_total`)
+  )
+```
+
+:::
+:::
+
+# Measles in Madagascar
+
+## Madagascar Info
+
+### Data Context {height="50%"}
+::: {.card title="Vaccination Data"}
+Vaccination coverage data for Madagascar was obtained from the WHO Immunization Data Portal, covering the percentage of children who received the first and second doses of the measles-containing vaccine from 2000–2025, reported annually through the WHO/UNICEF Joint Reporting Form on Immunization. Official estimates reflect national authority assessments of the most likely coverage, drawing from administrative data, surveys, or other sources.
+:::
+
+### Why This Country {height="50%"}
+::: {.card title="Why this country?"}
+Madagascar made up nearly 40 percent of all measles cases reported worldwide in 2019, becoming the largest single source of that year’s global surge. With a population of roughly 30 million, this spike was not the result of a large population but a true nationwide health emergency. It also makes Madagascar an important example for understanding how vaccination coverage influences the risk of major outbreaks.
+:::
+
+## Plot
+
+
+```{r}
+#| label: madagascar vaccine data 
+
+
+library(readxl)
+madagascar_vaccine <- read_excel("Measles vaccination coverage 2026-07-05 11-12 UTC.xlsx")
+
+madagascar_df <- cases_year |>
+  right_join(madagascar_vaccine, join_by(year == YEAR, iso3 == CODE, country == NAME))
+
+```
+
+### Animated Plot
+::: {.card title="Animated Plot"}
+The animation traces Madagascar's measles vaccination coverage from 2000 to 2024, showing how first-dose coverage fluctuated over time and how the introduction of a second dose in 2020 followed the country's devastating 2019 outbreak.
+
+```{r}
+#| label: animated plot
+
+library(tidyverse)
+library(gganimate)
+library(gifski)
+mcv_clean <- madagascar_df %>%
+  filter(COVERAGE_CATEGORY == "OFFICIAL") %>%
+  select(year, ANTIGEN, COVERAGE, measles_incidence_rate_per_1000000_total_population) |>
+  mutate(
+    year = as.integer(year), # fixes year with decimal (e.g 2011.01234)
+    COVERAGE = case_when(
+      ANTIGEN == "MCV2" & year < 2020 ~ NA_real_,  # MCV2 not yet introduced
+      TRUE ~ COVERAGE
+    )
+  ) |>
+  filter(!is.na(COVERAGE))
+
+
+p <- ggplot(mcv_clean, 
+            aes(x = year, 
+                y = COVERAGE, 
+                color = ANTIGEN,
+                group = ANTIGEN)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 2019L, linetype = "dashed", color = "tomato1", alpha = 0.6) +
+  annotate("text", x = 2019, y = 10, label = "2019 outbreak peak", 
+           hjust = -0.1, color = "tomato1", size = 3) +
+  scale_color_manual(
+    values = c("MCV1" = "tomato1", "MCV2" = "seagreen"),
+    labels = c("MCV1" = "First Dose", "MCV2" = "Second Dose")
+  ) +
+  labs(
+    title = "Madagascar Measles Vaccination Coverage Over Time",
+    subtitle = "Year: {frame_along}",
+    x = "Year", y = "Coverage (%)", color = NULL
+  ) +
+  transition_reveal(year)
+
+animate(p, renderer = gifski_renderer())
+```
+
+:::
